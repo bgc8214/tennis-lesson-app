@@ -1,0 +1,37 @@
+{
+  "result": {
+    "card1_problem": "라켓 준비 자세가 늦습니다",
+    "card1_evidence": "라켓을 뒤로 빼고 준비 자세를 잡으세요",
+    "card2_cueing": null,
+    "card2_evidence": "완전히 지어낸 문장이라 전사에 없음",
+    "card3_action": "",
+    "card3_evidence": "",
+    "timestamps": [
+      {
+        "sec": 10,
+        "quote": "라켓을 뒤로 빼고 준비 자세를 잡으세요",
+        "note": "패스스루필드",
+        "match_score": 1.0
+      },
+      {
+        "sec": 18,
+        "quote": "임팩트 순간에 팔을 쭉 뻗어주세요",
+        "match_score": 1.0
+      },
+      {
+        "sec": 34,
+        "quote": "발리는 짧게 끊어 치는 느낌으로",
+        "match_score": 1.0
+      }
+    ]
+  },
+  "stats": {
+    "match_threshold": 0.75,
+    "timestamps_total": 4,
+    "timestamps_verified": 3,
+    "timestamps_dropped": 1,
+    "cards_dropped": [
+      "card2_cueing"
+    ]
+  }
+}

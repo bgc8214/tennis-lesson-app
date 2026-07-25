@@ -1,0 +1,15 @@
+Secrets.xcconfig
+
+.DS_Store
+*.xcodeproj
+TennisLesson-iOS-Info.plist
+TennisLesson-macOS-Info.plist
+xcuserdata/
+.build/
+.swiftpm/
+DerivedData/
+
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/ios/App/App/public/

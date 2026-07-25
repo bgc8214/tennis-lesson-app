@@ -1,0 +1,95 @@
+name: TennisLesson
+options:
+  bundleIdPrefix: com.bossback
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+
+configFiles:
+  Debug: Secrets.xcconfig
+  Release: Secrets.xcconfig
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: C2N3L6375X
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+packages:
+  TennisCore:
+    path: TennisCore
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit.git
+    from: 1.0.0
+
+targetTemplates:
+  TennisLessonApp:
+    type: application
+    sources:
+      - path: TennisLesson
+    dependencies:
+      - package: TennisCore
+      - package: WhisperKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bossback.tennislesson
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SWIFT_EMIT_LOC_STRINGS: YES
+
+# GENERATE_INFOPLIST_FILE(Xcode 자동 합성)는 CFBundleDisplayName 등 "알려진"
+# 표준 키만 INFOPLIST_KEY_*에서 받아준다 — GEMINI_API_KEY 같은 커스텀 키는
+# 조용히 무시됨(실측: 빌드 세팅엔 값이 있는데 최종 Info.plist엔 안 들어감).
+# xcodegen의 info.properties로 실제 Info.plist 파일을 만들어야 $(VAR) 치환이
+# 커스텀 키에도 적용된다.
+targets:
+  TennisLesson-iOS:
+    templates: [TennisLessonApp]
+    platform: iOS
+    info:
+      path: TennisLesson-iOS-Info.plist
+      properties:
+        CFBundleDisplayName: 오늘의테니스
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        GEMINI_API_KEY: $(GEMINI_API_KEY)
+        GEMINI_MODEL: $(GEMINI_MODEL)
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "1"
+
+  TennisLesson-macOS:
+    templates: [TennisLessonApp]
+    platform: macOS
+    info:
+      path: TennisLesson-macOS-Info.plist
+      properties:
+        CFBundleDisplayName: 오늘의테니스
+        NSHumanReadableCopyright: ""
+        GEMINI_API_KEY: $(GEMINI_API_KEY)
+        GEMINI_MODEL: $(GEMINI_MODEL)
+    settings:
+      base:
+        COMBINE_HIDPI_IMAGES: YES
+        ENABLE_HARDENED_RUNTIME: YES
+
+schemes:
+  TennisLesson-iOS:
+    build:
+      targets:
+        TennisLesson-iOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+  TennisLesson-macOS:
+    build:
+      targets:
+        TennisLesson-macOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release

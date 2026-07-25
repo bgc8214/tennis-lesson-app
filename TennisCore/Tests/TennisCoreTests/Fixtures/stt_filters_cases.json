@@ -1,0 +1,46 @@
+{
+  "mixed_thresholds": {
+    "kept_texts": [
+      "안녕하세요 코치님",
+      "라켓을 뒤로 빼세요",
+      "라켓을 뒤로 빼셔요",
+      "포핸드 스트로크 연습하겠습니다",
+      "None 메타 세그먼트"
+    ],
+    "stats": {
+      "total": 10,
+      "dropped_no_speech": 1,
+      "dropped_logprob": 1,
+      "dropped_compression": 1,
+      "dropped_repeat": 1,
+      "dropped_empty": 1,
+      "kept": 5
+    }
+  },
+  "boundary_exact": {
+    "kept_texts": [
+      "경계압박테스트문장"
+    ],
+    "stats": {
+      "total": 1,
+      "dropped_no_speech": 0,
+      "dropped_logprob": 0,
+      "dropped_compression": 0,
+      "dropped_repeat": 0,
+      "dropped_empty": 0,
+      "kept": 1
+    }
+  },
+  "empty_list": {
+    "kept_texts": [],
+    "stats": {
+      "total": 0,
+      "dropped_no_speech": 0,
+      "dropped_logprob": 0,
+      "dropped_compression": 0,
+      "dropped_repeat": 0,
+      "dropped_empty": 0,
+      "kept": 0
+    }
+  }
+}
