@@ -23,7 +23,14 @@ struct LessonDetailView: View {
     @State private var editDate = Date()
     @FocusState private var noteFocused: Bool
 
-    private var showQuote: Bool { report?.transcriptQuality == "high" }
+    // 인용문 노출 조건: 원래는 transcript_quality=="high"일 때만 보여줬지만(whisper
+    // 경로는 항상 low라 사실상 항상 숨김), 3번(정제본) 적용 리포트는 quote_display가
+    // 붙어 있으므로 그 경우엔 인용(수정본+원문)을 보여준다. 기존 레슨은 quote_display가
+    // 없어 종전대로 숨겨진다.
+    private var showQuote: Bool {
+        report?.transcriptQuality == "high"
+        || (report?.timestamps.contains { $0.quoteDisplay != nil } ?? false)
+    }
     private var hasVideo: Bool { LessonVideoStorage.resolve(relativePath: lesson.localVideoRef) != nil }
 
     var body: some View {
