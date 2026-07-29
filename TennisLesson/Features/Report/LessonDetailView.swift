@@ -307,15 +307,18 @@ struct LessonDetailView: View {
     private func cueCard(_ cue: Report.TimestampItem) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
-                Button { seek(cue.sec) } label: {
+                // 시간 칩은 "여기서 재생된다"는 표시 — 이제 카드 전체가 탭 대상이라
+                // 작은 칩을 정확히 누를 필요가 없다. hasVideo면 ▶로 탭 가능함을 암시.
+                HStack(spacing: 4) {
+                    if hasVideo {
+                        Image(systemName: "play.fill").font(.system(size: 9, weight: .bold))
+                    }
                     Text(timeString(cue.sec))
                         .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(DS.primary, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
-                .buttonStyle(.plain)
-                .disabled(!hasVideo)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(DS.primary, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 Text(cue.label).font(.system(size: 14, weight: .bold)).foregroundStyle(DS.labelStrong)
                 Spacer(minLength: 0)
             }
@@ -335,17 +338,16 @@ struct LessonDetailView: View {
                     }
                 }
             }
-            HStack(spacing: 8) {
-                if let fix = cue.fix, !fix.isEmpty {
-                    Text("→ \(fix)").font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.primary)
-                }
-                Spacer(minLength: 0)
-                ReactionPills(value: reactionBinding("timestamp:\(cue.sec)"))
+            if let fix = cue.fix, !fix.isEmpty {
+                Text("→ \(fix)").font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.primary)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .dsCard()
+        // 카드 전체를 눌러 해당 시점으로 이동(작은 시간 칩만 누르던 UX 개선).
+        .onTapGesture { if hasVideo { seek(cue.sec) } }
     }
 
     // MARK: 인사이트
@@ -354,11 +356,11 @@ struct LessonDetailView: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(spacing: 10) {
                 insightCard(icon: "!", title: "고질병", body: report.card1Problem,
-                            color: DS.negative, bg: DS.negativeBg, key: "card1_problem")
+                            color: DS.negative, bg: DS.negativeBg)
                 insightCard(icon: "\u{201C}", title: "코치 큐잉", body: report.card2Cueing,
-                            color: DS.info, bg: DS.infoBg, key: "card2_cueing")
+                            color: DS.info, bg: DS.infoBg)
                 insightCard(icon: "→", title: "다음 액션", body: report.card3Action,
-                            color: DS.positive, bg: DS.positiveBg, key: "card3_action")
+                            color: DS.positive, bg: DS.positiveBg)
             }
             if !report.keywords.isEmpty {
                 HStack(spacing: 8) {
@@ -374,20 +376,16 @@ struct LessonDetailView: View {
     }
 
     @ViewBuilder
-    private func insightCard(icon: String, title: String, body: String?, color: Color, bg: Color, key: String) -> some View {
+    private func insightCard(icon: String, title: String, body: String?, color: Color, bg: Color) -> some View {
         if let body, !body.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    HStack(spacing: 8) {
-                        Text(icon)
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 22, height: 22)
-                            .background(color, in: Circle())
-                        Text(title).font(.system(size: 14, weight: .bold)).foregroundStyle(color)
-                    }
-                    Spacer()
-                    ReactionPills(value: reactionBinding(key))
+                HStack(spacing: 8) {
+                    Text(icon)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 22, height: 22)
+                        .background(color, in: Circle())
+                    Text(title).font(.system(size: 14, weight: .bold)).foregroundStyle(color)
                 }
                 Text(body).font(.system(size: 13)).lineSpacing(4).foregroundStyle(DS.labelNormal)
             }
@@ -427,27 +425,7 @@ struct LessonDetailView: View {
         .dsCard()
     }
 
-    // MARK: 반응/메모 저장
-    private var reactions: [String: String] {
-        guard let json = lesson.reactionsJSON, let data = json.data(using: .utf8),
-              let dict = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
-        return dict
-    }
-
-    private func reactionBinding(_ key: String) -> Binding<String?> {
-        Binding(
-            get: { reactions[key] },
-            set: { newValue in
-                var dict = reactions
-                dict[key] = newValue
-                if let data = try? JSONEncoder().encode(dict), let json = String(data: data, encoding: .utf8) {
-                    lesson.reactionsJSON = json
-                    save()
-                }
-            }
-        )
-    }
-
+    // MARK: 메모 저장
     private var noteBinding: Binding<String> {
         Binding(
             get: { lesson.userNote ?? "" },
@@ -484,28 +462,4 @@ struct LessonDetailView: View {
     }
 
     private func timeString(_ sec: Int) -> String { String(format: "%d:%02d", sec / 60, sec % 60) }
-}
-
-/// 항목별 👍/👎 (목업 스타일 원형 pill).
-struct ReactionPills: View {
-    @Binding var value: String?
-
-    var body: some View {
-        HStack(spacing: 6) {
-            pill(system: "hand.thumbsup.fill", target: "up", on: DS.primaryBg, onColor: DS.primary)
-            pill(system: "hand.thumbsdown.fill", target: "down", on: DS.negativeBg, onColor: DS.negative)
-        }
-    }
-
-    private func pill(system: String, target: String, on: Color, onColor: Color) -> some View {
-        let active = value == target
-        return Button { value = active ? nil : target } label: {
-            Image(systemName: system)
-                .font(.system(size: 12))
-                .foregroundStyle(active ? onColor : DS.labelAssistive)
-                .frame(width: 26, height: 26)
-                .background(active ? on : Color.clear, in: Circle())
-        }
-        .buttonStyle(.plain)
-    }
 }
