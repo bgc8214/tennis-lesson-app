@@ -10,6 +10,9 @@ public struct Report: Codable, Sendable {
         public let category: String?
         public let label: String
         public let quote: String?
+        /// 3번(원문/표시 분리): STT 오인식을 최소 교정한 정제본. 표시 전용이며
+        /// 원문(quote)은 그대로 보존된다. 백엔드가 안 주면 nil → 원문으로 폴백.
+        public let quoteDisplay: String?
         public let problem: String?
         public let fix: String?
         public let importance: String
@@ -17,6 +20,7 @@ public struct Report: Codable, Sendable {
 
         enum CodingKeys: String, CodingKey {
             case sec, type, category, label, quote, problem, fix, importance
+            case quoteDisplay = "quote_display"
             case matchScore = "match_score"
         }
 
@@ -28,6 +32,7 @@ public struct Report: Codable, Sendable {
             category = try c.decodeIfPresent(String.self, forKey: .category)
             label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
             quote = try c.decodeIfPresent(String.self, forKey: .quote)
+            quoteDisplay = try c.decodeIfPresent(String.self, forKey: .quoteDisplay)
             problem = try c.decodeIfPresent(String.self, forKey: .problem)
             fix = try c.decodeIfPresent(String.self, forKey: .fix)
             importance = try c.decodeIfPresent(String.self, forKey: .importance) ?? "normal"

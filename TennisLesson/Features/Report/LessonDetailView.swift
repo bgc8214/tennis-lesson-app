@@ -312,8 +312,21 @@ struct LessonDetailView: View {
                 Text(cue.label).font(.system(size: 14, weight: .bold)).foregroundStyle(DS.labelStrong)
                 Spacer(minLength: 0)
             }
-            if showQuote, let q = cue.quote, !q.isEmpty {
-                Text("“\(q)”").font(.system(size: 13)).italic().foregroundStyle(DS.labelAlternative)
+            if showQuote {
+                let display = cue.quoteDisplay ?? cue.quote
+                if let display, !display.isEmpty {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("“\(display)”")
+                            .font(.system(size: 13)).italic()
+                            .foregroundStyle(DS.labelAlternative)
+                        // 정제본이 원문과 다르면 원문도 함께 노출(대조 가능하게).
+                        if let raw = cue.quote, !raw.isEmpty, raw != display {
+                            Text("원문 “\(raw)”")
+                                .font(.system(size: 11))
+                                .foregroundStyle(DS.labelAssistive)
+                        }
+                    }
+                }
             }
             HStack(spacing: 8) {
                 if let fix = cue.fix, !fix.isEmpty {
