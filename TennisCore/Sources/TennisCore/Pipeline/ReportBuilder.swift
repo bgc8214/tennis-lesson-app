@@ -30,19 +30,27 @@ public struct ReportBuilder: Sendable {
         }
     }
 
+    /// `onProgress`: (사람이 읽는 단계 메시지, 그 단계의 진행률 0~1 또는 nil).
+    /// STT 단계는 WhisperKit 실측 진행률을 실어 보내고, 나머지 단계(Gemini 호출 등)는
+    /// 진행률을 알 수 없어 nil(불확정)로 보낸다.
     public func build(
         audioURL: URL,
         modelName: String,
-        onProgress: (@Sendable (String) -> Void)? = nil
+        onProgress: (@Sendable (String, Double?) -> Void)? = nil
     ) async throws -> [String: JSONValue] {
-        onProgress?("음성 인식 중...")
-        let rawSegments = try await sttEngine.transcribe(audioURL: audioURL, language: sttLanguage, prompt: sttPrompt)
+        onProgress?("음성 인식 중...", 0)
+        let rawSegments = try await sttEngine.transcribe(
+            audioURL: audioURL,
+            language: sttLanguage,
+            prompt: sttPrompt,
+            onProgress: { fraction in onProgress?("음성 인식 중...", fraction) }
+        )
         let (segments, filterStats) = filterHallucinatedSegments(rawSegments)
         guard !segments.isEmpty else { throw BuildError.emptyTranscript }
 
         let transcriptText = segmentsToTranscriptText(segments)
 
-        onProgress?("오답노트 정리 중...")
+        onProgress?("오답노트 정리 중...", nil)
         let windowMinutes = max(1, Int((segments.last!.end / 60).rounded()))
         let minCount = max(1, Int((Double(Prompts.passAMinPer10Min) * Double(windowMinutes) / 10).rounded()))
         let maxCount = max(minCount, Int((Double(Prompts.passAMaxPer10Min) * Double(windowMinutes) / 10).rounded()))
@@ -95,6 +103,7 @@ public struct ReportBuilder: Sendable {
         }
         let verifiedFeedbacksText = feedbackLines.joined(separator: "\n")
 
+        onProgress?("리포트 작성 중...", nil)
         let passBPrompt = Prompts.passBTemplate.replacingOccurrences(of: "{verified_feedbacks}", with: verifiedFeedbacksText)
         let passBResponseText = try await gemini.generateContent(prompt: passBPrompt)
         let parsedB = try JSONParsing.parseObject(passBResponseText)

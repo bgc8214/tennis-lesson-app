@@ -8,248 +8,194 @@ import UIKit
 #endif
 
 enum AnalyzePhase: Equatable {
+    case queued
     case idle
     case importingFromPhotos
     case downloadingYouTube
     case extractingAudio
-    case running(String)
+    /// (단계 메시지, 진행률 0~1 또는 nil=불확정). STT 단계만 실측 진행률을 가진다.
+    case running(String, Double?)
     case done
     case failed(String)
 }
 
-struct AnalyzeView: View {
+/// 분석 시작 바텀시트 — 목업 디자인(사진첩 / 파일 / YouTube URL + 분석 중 스피너).
+struct AnalyzeSheet: View {
     @Environment(\.modelContext) private var modelContext
-    @State private var phase: AnalyzePhase = .idle
+    @Environment(\.dismiss) private var dismiss
+    @State private var tracker = AnalysisTracker.shared
     @State private var showImporter = false
     @State private var photoPickerItem: PhotosPickerItem?
-    @State private var savedLesson: Lesson?
-    #if os(macOS)
     @State private var youtubeURLText: String = ""
-    #endif
+    @State private var urlFieldOpen = false
 
     var body: some View {
-        VStack(spacing: 20) {
-            switch phase {
-            case .idle:
+        VStack(spacing: 0) {
+            Capsule().fill(DS.fillStrong).frame(width: 36, height: 5).padding(.top, 10).padding(.bottom, 14)
+            pickerView
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 28)
+        .presentationDetents([.height(urlFieldOpen ? 380 : 320)])
+        .presentationDragIndicator(.hidden)
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.movie, .audio, .video], allowsMultipleSelection: false, onCompletion: handleFile)
+        .onChange(of: photoPickerItem, handlePhotoPick)
+    }
+
+    // MARK: 선택 화면
+    private var pickerView: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("레슨 분석").font(.system(size: 18, weight: .bold)).foregroundStyle(DS.labelStrong)
+                Spacer()
+                if tracker.pendingCount > 0 {
+                    Text("\(tracker.pendingCount)개 진행/대기 중")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(DS.primary)
+                }
+            }
+            .padding(.bottom, 10)
+
+            #if os(iOS)
+            PhotosPicker(selection: $photoPickerItem, matching: .videos, photoLibrary: .shared()) {
+                OptionRow(iconBg: DS.primaryBg, tint: DS.primary, system: "photo.on.rectangle", title: "사진첩에서 레슨 영상 선택")
+            }
+            .buttonStyle(.plain)
+            #endif
+
+            Button { showImporter = true } label: {
+                OptionRow(iconBg: DS.positiveBg, tint: DS.greenAccent, system: "doc.fill", title: "파일에서 선택")
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                withAnimation { urlFieldOpen.toggle() }
+            } label: {
+                OptionRow(iconBg: DS.negativeBg, tint: DS.negative, system: "play.rectangle.fill", title: "YouTube URL로 분석")
+            }
+            .buttonStyle(.plain)
+
+            if urlFieldOpen {
                 #if os(iOS)
-                PhotosPicker(
-                    selection: $photoPickerItem,
-                    matching: .videos,
-                    photoLibrary: .shared()
-                ) {
-                    Label("사진첩에서 레슨 영상 선택", systemImage: "photo.on.rectangle")
-                }
-                .buttonStyle(.borderedProminent)
-                #endif
-
-                Button("파일에서 선택") { showImporter = true }
-                    .buttonStyle(.bordered)
-
-                #if os(macOS)
-                Divider().padding(.vertical, 4)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("또는 YouTube URL (yt-dlp 필요, mac 전용 · 21문서 M5)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    HStack {
-                        TextField("https://youtube.com/watch?v=...", text: $youtubeURLText)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(minWidth: 280)
-                        Button("가져오기") {
-                            let text = youtubeURLText
-                            youtubeURLText = ""
-                            Task { await runFromYouTube(urlString: text) }
+                // 시스템 붙여넣기 버튼 — 탭 자체가 사용자 허가라 "붙여넣기 허용" 모달이
+                // 안 뜬다. 클립보드 내용에 따라 스스로 활성/비활성되므로 감지 게이트 없이
+                // 항상 노출하는 게 오히려 일관적이다(감지 휴리스틱의 누락·타이밍 문제 제거).
+                if youtubeURLText.isEmpty {
+                    PasteButton(payloadType: String.self) { strings in
+                        if let s = strings.first(where: { YouTubeURL.videoID(from: $0) != nil }) ?? strings.first {
+                            youtubeURLText = s.trimmingCharacters(in: .whitespacesAndNewlines)
                         }
-                        .disabled(youtubeURLText.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
+                    .labelStyle(.titleAndIcon)
+                    .tint(DS.primary)
+                    .buttonBorderShape(.capsule)
+                    .padding(.top, 10)
                 }
                 #endif
-            case .importingFromPhotos:
-                ProgressView("사진첩에서 불러오는 중...")
-            case .downloadingYouTube:
-                ProgressView("YouTube에서 다운로드 중...")
-            case .extractingAudio:
-                ProgressView("오디오 추출 중...")
-            case .running(let message):
-                ProgressView(message)
-            case .done:
-                ContentUnavailableView("분석 완료", systemImage: "checkmark.circle")
-                Button("다시 분석") { phase = .idle }
-            case .failed(let message):
-                Text("실패: \(message)")
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-                    .padding()
-                Button("다시 시도") { phase = .idle }
-            }
-        }
-        .padding()
-        .navigationTitle("레슨 분석")
-        .fileImporter(
-            isPresented: $showImporter,
-            allowedContentTypes: [.movie, .audio, .video],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first {
-                    Task { await runPipeline(sourceURL: url) }
-                }
-            case .failure(let error):
-                phase = .failed(error.localizedDescription)
-            }
-        }
-        .onChange(of: photoPickerItem) { _, newItem in
-            guard let newItem else { return }
-            Task {
-                phase = .importingFromPhotos
-                do {
-                    // FileRepresentation/Transferable의 UTType 매칭이 사진첩 영상에서
-                    // 불안정("given transferable item does not conform to" 크래시 실측)해서,
-                    // 대신 원시 Data로 받아 직접 임시 파일에 쓴다 — 더 단순하고 확실한 경로.
-                    guard let data = try await newItem.loadTransferable(type: Data.self) else {
-                        phase = .failed("사진첩에서 영상을 불러오지 못했습니다")
-                        return
+
+                HStack(spacing: 8) {
+                    TextField("https://youtube.com/watch?v=...", text: $youtubeURLText)
+                        .font(.system(size: 14))
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 12).frame(height: 42)
+                        .background(DS.pageBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(DS.lineNormal, lineWidth: 1))
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        #endif
+                    Button {
+                        let text = youtubeURLText; youtubeURLText = ""
+                        tracker.enqueueYouTube(urlString: text, modelContext: modelContext)
+                        dismiss()
+                    } label: {
+                        Text("가져오기").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                            .padding(.horizontal, 14).frame(height: 42)
+                            .background(DS.primary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
-                    let ext = newItem.supportedContentTypes.first?.preferredFilenameExtension ?? "mov"
-                    let tempURL = FileManager.default.temporaryDirectory
-                        .appendingPathComponent(UUID().uuidString)
-                        .appendingPathExtension(ext)
-                    try data.write(to: tempURL)
-                    await runPipeline(sourceURL: tempURL, cleanUpSource: true)
-                } catch {
-                    print("[AnalyzeView] 사진첩 로드 실패: \(error)")
-                    phase = .failed(String(describing: error))
+                    .buttonStyle(.plain)
+                    .disabled(youtubeURLText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
-                photoPickerItem = nil
+                .padding(.top, 10)
             }
+
+            Button { dismiss() } label: {
+                Text("닫기").font(.system(size: 15, weight: .semibold)).foregroundStyle(DS.labelAlternative)
+                    .frame(maxWidth: .infinity).padding(.top, 16)
+            }
+            .buttonStyle(.plain)
         }
     }
 
-    private func runPipeline(sourceURL: URL, cleanUpSource: Bool = false, sourceType: String = "upload") async {
-        let accessed = sourceURL.startAccessingSecurityScopedResource()
-        setIdleTimerDisabled(true)
-        defer {
-            if accessed { sourceURL.stopAccessingSecurityScopedResource() }
-            if cleanUpSource { try? FileManager.default.removeItem(at: sourceURL) }
-            setIdleTimerDisabled(false)
-        }
-
-        let lessonID = UUID()
-        var localVideoRef: String?
-        do {
-            phase = .extractingAudio
-            let workDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
-            let audioURL = workDir.appendingPathComponent("audio.m4a")
-
-            try await AudioExtractor.extractMono16k(from: sourceURL, to: audioURL)
-
-            // 타임스탬프 점프 재생을 위해 원본 영상을 영구 보관(오디오는 임시 폴더에서만 사용).
-            localVideoRef = try? LessonVideoStorage.persist(sourceURL: sourceURL, lessonID: lessonID)
-
-            guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "GEMINI_API_KEY") as? String,
-                  apiKey != "placeholder", !apiKey.isEmpty else {
-                phase = .failed("GEMINI_API_KEY가 설정되지 않았습니다 (Secrets.xcconfig 확인)")
-                return
+    // MARK: 핸들러 — 모두 큐에 넣고 시트를 닫는다(진행은 메인 화면 배너에 표시).
+    private func handleFile(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            if let url = urls.first {
+                tracker.enqueueUpload(sourceURL: url, cleanUpSource: false, title: nil, modelContext: modelContext)
+                dismiss()
             }
-            let modelName = (Bundle.main.object(forInfoDictionaryKey: "GEMINI_MODEL") as? String) ?? "gemini-2.0-flash"
-
-            let sttEngine = WhisperKitSttEngine()
-            let gemini = GeminiClient(apiKey: apiKey, model: modelName)
-            let builder = ReportBuilder(sttEngine: sttEngine, gemini: gemini)
-
-            let reportDict = try await builder.build(audioURL: audioURL, modelName: modelName) { message in
-                Task { @MainActor in phase = .running(message) }
-            }
-            let reportJSON = try encodeReportJSON(reportDict)
-            let report = try? Report.decode(fromJSON: reportJSON)
-
-            let lesson = Lesson(
-                id: lessonID,
-                sourceType: sourceType,
-                videoTitle: sourceURL.deletingPathExtension().lastPathComponent,
-                status: "DONE",
-                reportJSON: reportJSON,
-                localVideoRef: localVideoRef,
-                lessonType: report?.lessonType.joined(separator: ",")
-            )
-            modelContext.insert(lesson)
-            try modelContext.save()
-            savedLesson = lesson
-
-            try? FileManager.default.removeItem(at: workDir)
-            phase = .done
-        } catch {
-            print("[AnalyzeView] 파이프라인 실패: \(error)")
-            LessonVideoStorage.delete(relativePath: localVideoRef)
-            phase = .failed(String(describing: error))
+        case .failure(let error):
+            ToastCenter.shared.show("파일 선택 실패: \(error.localizedDescription)")
         }
     }
 
-    #if os(macOS)
-    /// 21문서 M5 — YouTube는 iOS에서 보류(Python 임베드 리스크), macOS는 yt-dlp 외부
-    /// 바이너리로 영상을 받아 기존 M2 파이프라인(runPipeline)을 그대로 재사용한다.
-    /// 오디오 단독이 아니라 영상(가능하면 사전 병합된 단일 파일)을 받아야 ReportView의
-    /// 타임스탬프 점프 재생이 유지된다.
-    private func runFromYouTube(urlString: String) async {
-        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        phase = .downloadingYouTube
-
-        let workDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        do {
-            try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
-            let outputTemplate = workDir.appendingPathComponent("%(title)s.%(ext)s").path
-
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            var env = ProcessInfo.processInfo.environment
-            // GUI 앱은 로그인 셸의 PATH를 상속받지 못해 Homebrew 경로를 직접 보강해야 한다.
-            env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")
-            process.environment = env
-            process.arguments = ["yt-dlp", "-f", "best[ext=mp4]/best", "--no-playlist", "-o", outputTemplate, trimmed]
-
-            let stderrPipe = Pipe()
-            process.standardError = stderrPipe
-            try process.run()
-            process.waitUntilExit()
-
-            guard process.terminationStatus == 0 else {
-                let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                let errText = String(data: errData, encoding: .utf8) ?? "알 수 없는 오류"
-                phase = .failed("yt-dlp 실패: \(errText.prefix(300))")
-                return
+    private func handlePhotoPick(_ old: PhotosPickerItem?, _ newItem: PhotosPickerItem?) {
+        guard let newItem else { return }
+        Task {
+            do {
+                guard let movie = try await newItem.loadTransferable(type: PickedMovie.self) else {
+                    ToastCenter.shared.show("사진첩에서 영상을 불러오지 못했습니다")
+                    return
+                }
+                tracker.enqueueUpload(sourceURL: movie.url, cleanUpSource: true, title: nil, modelContext: modelContext)
+                dismiss()
+            } catch {
+                print("[AnalyzeSheet] 사진첩 로드 실패: \(error)")
+                ToastCenter.shared.show("사진첩 로드 실패")
             }
-
-            let downloaded = try FileManager.default
-                .contentsOfDirectory(at: workDir, includingPropertiesForKeys: nil)
-                .first { !$0.lastPathComponent.hasPrefix(".") }
-            guard let downloaded else {
-                phase = .failed("다운로드된 파일을 찾을 수 없습니다")
-                return
-            }
-            await runPipeline(sourceURL: downloaded, cleanUpSource: true, sourceType: "youtube")
-        } catch {
-            phase = .failed(String(describing: error))
+            photoPickerItem = nil
         }
-    }
-    #endif
-
-    /// 파이프라인 실행(수 분~수십 분) 중 화면이 잠들어 처리가 중단되지 않도록 방지.
-    private func setIdleTimerDisabled(_ disabled: Bool) {
-        #if os(iOS)
-        UIApplication.shared.isIdleTimerDisabled = disabled
-        #endif
-    }
-
-    private func encodeReportJSON(_ report: [String: JSONValue]) throws -> String {
-        let data = try JSONEncoder().encode(JSONValue.object(report))
-        return String(data: data, encoding: .utf8) ?? "{}"
     }
 }
 
-#Preview {
-    NavigationStack { AnalyzeView() }
-        .modelContainer(for: Lesson.self, inMemory: true)
+/// 바텀시트의 옵션 한 줄(아이콘 + 제목).
+private struct OptionRow: View {
+    let iconBg: Color
+    let tint: Color
+    let system: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: system).font(.system(size: 16)).foregroundStyle(tint)
+                .frame(width: 34, height: 34)
+                .background(iconBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(DS.labelStrong)
+            Spacer()
+        }
+        .padding(.vertical, 12).padding(.horizontal, 8)
+        .contentShape(Rectangle())
+    }
+}
+
+/// PhotosPicker에서 고른 영상을 `Data`가 아니라 파일 그대로(FileRepresentation) 받는다.
+/// 시스템이 임시 위치에 이미 받아둔 파일을 앱 tmp로 복사만 하므로 메모리에 전체
+/// 바이트가 올라가지 않는다 — Capacitor 버전의 base64 브리지 signal 9 재발 방지와
+/// 같은 원칙(21문서 0절).
+struct PickedMovie: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { movie in
+            SentTransferredFile(movie.url)
+        } importing: { received in
+            let ext = received.file.pathExtension.isEmpty ? "mov" : received.file.pathExtension
+            let copy = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(ext)
+            try FileManager.default.copyItem(at: received.file, to: copy)
+            return Self(url: copy)
+        }
+    }
 }

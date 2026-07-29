@@ -34,7 +34,12 @@ public final class WhisperKitSttEngine: SttEngine, @unchecked Sendable {
         return loaded
     }
 
-    public func transcribe(audioURL: URL, language: String, prompt: String?) async throws -> [SttSegment] {
+    public func transcribe(
+        audioURL: URL,
+        language: String,
+        prompt: String?,
+        onProgress: (@Sendable (Double) -> Void)?
+    ) async throws -> [SttSegment] {
         let whisperKit = try await ensureLoaded()
 
         let options = DecodingOptions(
@@ -45,7 +50,25 @@ public final class WhisperKitSttEngine: SttEngine, @unchecked Sendable {
             // WhisperKit 기본값(2.4/-1.0/0.6)이 서버 임계값과 동일해 그대로 둔다.
         )
 
+        // WhisperKit 인스턴스의 `progress`(Foundation.Progress)는 전체 오디오 길이 대비
+        // seek window마다 fractionCompleted를 갱신한다(TranscribeTask). transcribe는
+        // 완료까지 블로킹하므로, 별도 폴링 태스크로 주기적으로 읽어 진행률을 보고한다.
+        // Progress는 스레드 세이프한 읽기가 가능하고, 이 엔진은 @unchecked Sendable이라
+        // nonisolated(unsafe) 캡처로 병렬 읽기를 허용한다(최악의 경우 살짝 오래된 값).
+        var pollTask: Task<Void, Never>?
+        if let onProgress {
+            nonisolated(unsafe) let progressRef = whisperKit.progress
+            pollTask = Task {
+                while !Task.isCancelled {
+                    onProgress(progressRef.fractionCompleted)
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                }
+            }
+        }
+        defer { pollTask?.cancel() }
+
         let results = try await whisperKit.transcribe(audioPath: audioURL.path, decodeOptions: options)
+        onProgress?(1.0)
 
         var segments: [SttSegment] = []
         for result in results {

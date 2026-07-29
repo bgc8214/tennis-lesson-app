@@ -56,6 +56,15 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         GEMINI_API_KEY: $(GEMINI_API_KEY)
         GEMINI_MODEL: $(GEMINI_MODEL)
+        # BGContinuedProcessingTask(iOS 26) — 화면 잠금/다른 앱 전환으로 분석이
+        # 끊기던 문제(2026-07-26 실사용 확인) 해결: 사용자가 포그라운드에서 시작한
+        # 분석을 백그라운드에서도 계속하고 시스템 UI로 진행률을 보여준다.
+        UIBackgroundModes: [processing]
+        # 2026-07-26 실기기 크래시로 확인: register()/submit()는 반드시 동일한
+        # "구체적" 식별자를 써야 한다 — 와일드카드 문자열 자체를 register()나
+        # submit()에 넘기면 "No launch handler registered..."로 즉시 크래시한다.
+        # 이 앱은 항상 분석 1개만 도니 와일드카드 없이 고정 식별자 하나면 충분.
+        BGTaskSchedulerPermittedIdentifiers: ["com.bossback.tennislesson.analyze.session"]
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "1"
